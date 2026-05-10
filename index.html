@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生成績查詢系統 - 日式風</title>
+    <title>學生成績查詢系統 </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -270,7 +270,14 @@
         let sheetList = [];
         let currentUserId = "";
 
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+      const firebaseConfig = {
+  apiKey: "AIzaSyCAzRaN8edtvfTOcjBoq_Etz6_UmSSqBt4",
+  authDomain: "grade02-2899b.firebaseapp.com",
+  projectId: "grade02-2899b",
+  storageBucket: "grade02-2899b.firebasestorage.app",
+  messagingSenderId: "61461584284",
+  appId: "1:61461584284:web:34ec84a3763bb6a8d89059"
+};
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         function parseCSV(str) {
