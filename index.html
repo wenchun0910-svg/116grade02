@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生成績查詢系統 - 日式風</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- 匯入 html2pdf.js 用於產生 PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        /* 日式風格字體：主要使用思源宋體，PDF 使用芫荽體或硬筆楷書 */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Klee+One:wght@400;600&display=swap');
+        
+        body { 
+            font-family: 'Noto Serif TC', serif; 
+            background-color: #F4F1EC; /* 宣紙白 */
+            color: #2C3539; /* 鐵灰色 */
+        }
+        
+        /* 傳統和風圖紋背景 (青海波風格點綴) */
+        .wagara-bg {
+            background-image: radial-gradient(#DCD3C6 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .fade-in { animation: fadeIn 0.6s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .loader {
+            border: 3px solid #EAE5D9; border-top: 3px solid #5B6E5B; border-radius: 50%;
+            width: 20px; height: 20px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        input[type="file"]::file-selector-button {
+            margin-right: 10px; border: 1px solid #5B6E5B; background: #5B6E5B;
+            padding: 6px 12px; border-radius: 4px; color: #fff; cursor: pointer;
+            font-family: 'Noto Serif TC', serif;
+        }
+
+        /* 日式卡片樣式 */
+        .wa-card {
+            background-color: #FFFFFF;
+            border: 1px solid #DCD3C6;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.04);
+            border-radius: 4px;
+        }
+
+        .wa-title-border {
+            border-left: 4px solid #8B2626; /* 傳統紅色 */
+            padding-left: 12px;
+        }
+        
+        /* 列印用版面：寬高鎖定 A4 橫式比例 */
+        #pdfExportContainer {
+            width: 1024px; 
+            height: 724px; 
+            padding: 40px 60px; 
+            box-sizing: border-box;
+            background-color: #FFFFFF;
+            color: #1A1A1A;
+            margin: 0 auto;
+            font-family: 'Yansui', 'Klee One', 'Noto Serif TC', serif;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-10 px-4 relative overflow-x-hidden wagara-bg">
+
+    <header id="mainHeader" class="mb-8 text-center mt-4">
+        <div class="flex items-center justify-center mb-2">
+            <span class="text-[#8B2626] text-3xl mr-3"><i class="fa-solid fa-fan"></i></span>
+            <h1 class="text-4xl font-black text-[#2C3539] tracking-widest">學生成績查詢</h1>
+            <span class="text-[#8B2626] text-3xl ml-3"><i class="fa-solid fa-fan"></i></span>
+        </div>
+        <p class="text-[#736F6E] mt-2 tracking-widest text-sm">學業成績管理系統</p>
+    </header>
+
+    <div id="systemMsg" class="w-full max-w-md mb-4 hidden"></div>
+
+    <!-- 1. 登入面板 -->
+    <div id="loginPanel" class="wa-card p-10 w-full max-w-md fade-in relative">
+        <div class="absolute top-0 left-0 w-full h-2 bg-[#5B6E5B] rounded-t-sm"></div>
+        <h2 class="text-2xl font-bold text-center mb-8 tracking-widest wa-title-border border-none">學生登入</h2>
+        <div class="space-y-6">
+            <div>
+                <label class="block text-[#5B6E5B] font-bold mb-2 text-sm tracking-widest">身分證字號 (後五碼)</label>
+                <input type="password" id="loginIdInput" maxlength="5" 
+                       class="w-full bg-[#F9F8F6] border border-[#DCD3C6] text-center text-3xl tracking-[0.5em] rounded focus:ring-1 focus:ring-[#5B6E5B] focus:border-[#5B6E5B] outline-none block p-4 shadow-inner text-[#2C3539]" 
+                       placeholder="•••••">
+            </div>
+            <button onclick="handleLogin()" id="loginBtn" disabled class="w-full text-white bg-[#5B6E5B] hover:bg-[#4A5A4A] font-bold rounded text-lg px-5 py-4 transition shadow flex justify-center items-center tracking-widest cursor-not-allowed opacity-70">
+                <div class="loader mr-2 border-t-white"></div> 資料載入中...
+            </button>
+        </div>
+    </div>
+
+    <!-- 2. 主控台 -->
+    <div id="dashboardPanel" class="hidden w-full max-w-5xl fade-in">
+        <div class="wa-card p-5 mb-8 flex flex-col md:flex-row items-center justify-between">
+            <div class="flex items-center w-full md:w-auto mb-4 md:mb-0">
+                <div class="bg-[#F4F1EC] p-3 rounded-full mr-4 text-[#5B6E5B] border border-[#DCD3C6]">
+                    <i class="fa-solid fa-user text-xl"></i>
+                </div>
+                <div>
+                    <p class="text-xs text-[#736F6E] tracking-widest mb-1">歡迎回來</p>
+                    <h3 class="text-xl font-bold tracking-widest"><span id="userDisplayName">同學</span></h3>
+                </div>
+            </div>
+            <div class="flex items-center w-full md:w-auto space-x-3">
+                <select id="examSelect" onchange="handleExamChange()" class="w-full bg-[#F9F8F6] border border-[#DCD3C6] text-[#2C3539] text-base rounded p-3 font-bold tracking-wider outline-none focus:border-[#5B6E5B]">
+                    <option value="" disabled selected>▼ 請選擇評量成績...</option>
+                </select>
+                <button onclick="logout()" class="text-[#8B2626] hover:bg-[#FDF8F8] border border-[#8B2626] px-5 py-3 rounded transition text-sm font-bold tracking-widest whitespace-nowrap">
+                    登出 <i class="fa-solid fa-sign-out-alt ml-1"></i>
+                </button>
+            </div>
+        </div>
+
+        <div id="resultArea" class="hidden animate-fade-in-up">
+            <div id="resultLoader" class="hidden py-16 text-center"><div class="loader inline-block border-t-[#5B6E5B] w-12 h-12 mb-4"></div><p class="text-[#736F6E] tracking-widest">成績讀取中...</p></div>
+            
+            <!-- 網頁顯示用成績區塊 -->
+            <div id="resultContent" class="hidden">
+                <!-- 工具列：匯出 PDF 按鈕 -->
+                <div class="flex justify-end items-center mb-6">
+                    <button onclick="downloadPDF()" id="pdfBtn" class="bg-[#8B2626] hover:bg-[#701E1E] text-white px-6 py-3 rounded shadow-md transition flex items-center font-bold tracking-widest">
+                        <i class="fa-solid fa-print mr-2 text-lg"></i>印製成績單 (PDF)
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
+                    <div class="wa-card p-5 text-center"><div class="text-xs text-[#736F6E] mb-2 tracking-widest">座號</div><div class="text-3xl font-black text-[#2C3539]" id="resSeat">--</div></div>
+                    <div class="wa-card p-5 text-center"><div class="text-xs text-[#736F6E] mb-2 tracking-widest">姓名</div><div class="text-3xl font-black text-[#2C3539]" id="resName">--</div></div>
+                    <div class="wa-card p-5 text-center bg-[#5B6E5B] text-white border-none"><div class="text-xs text-[#DCD3C6] mb-2 tracking-widest">備註 (名次)</div><div class="text-3xl font-black" id="resNote">--</div></div>
+                    <div class="wa-card p-5 text-center"><div class="text-xs text-[#736F6E] mb-2 tracking-widest">總分</div><div class="text-3xl font-black text-[#2C3539]" id="resTotal">--</div></div>
+                </div>
+
+                <div class="wa-card overflow-hidden mb-10">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-base text-left">
+                            <thead class="text-sm text-[#736F6E] uppercase bg-[#F9F8F6] border-b border-[#DCD3C6] tracking-widest" id="scoreTableHead">
+                                <!-- JS 填入 -->
+                            </thead>
+                            <tbody id="scoreTableBody" class="divide-y divide-[#DCD3C6]"></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <h3 class="mb-5 text-xl font-bold text-[#2C3539] wa-title-border tracking-widest">班級統計分析</h3>
+                <div id="statsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== 專屬 PDF 列印的隱藏區塊 (橫式、無色彩、純表格、嚴格單頁) ===== -->
+    <!-- 加入 hidden class 預設隱藏 -->
+    <div id="pdfExportContainer" class="hidden">
+        <div class="text-center mb-10 relative">
+            <h2 class="text-4xl font-black text-black tracking-[0.2em] border-b-2 border-black inline-block pb-2 px-10" id="pdfExportTitle">成績通知單</h2>
+        </div>
+        
+        <div class="flex justify-center items-center mb-6 pb-4 space-x-16">
+            <div class="text-2xl font-bold tracking-wider">座號：<span id="pdfExportSeat" class="mr-2"></span></div>
+            <div class="text-2xl font-bold tracking-wider">姓名：<span id="pdfExportName" class="mr-2"></span></div>
+            <div class="text-2xl font-bold tracking-wider">總分：<span id="pdfExportTotal" class="mr-2"></span></div>
+            <div class="text-2xl font-bold tracking-wider">備註(名次)：<span id="pdfExportNote"></span></div>
+        </div>
+
+        <!-- 成績表格 -->
+        <table class="w-full border-collapse border-2 border-black text-xl text-center mb-8">
+            <thead id="pdfExportTableHead">
+                <!-- JS 填入 -->
+            </thead>
+            <tbody id="pdfExportTableBody">
+                <!-- JS 填入 -->
+            </tbody>
+        </table>
+
+        <!-- 印章與日期區塊 -->
+        <div class="flex justify-end mt-10 pr-16">
+            <div class="flex flex-col items-center">
+                <div class="flex items-center mb-3">
+                    <span class="text-2xl font-bold text-black mr-6 tracking-widest">導師</span>
+                    <div class="relative inline-block">
+                        <!-- 修改：這裡確保使用的是您上傳的 image_0a7be2.png 印章圖檔 -->
+                        <img src="image_0a7be2.png" alt="導師核章" class="w-24 object-contain mix-blend-multiply" onerror="this.style.display='none'; document.getElementById('pdfCssStamp').style.display='flex';">
+                        <div id="pdfCssStamp" class="hidden w-20 h-20 border-4 border-[#8B2626] text-[#8B2626] rounded items-center justify-center font-bold text-2xl transform -rotate-12 bg-white">
+                            核章
+                        </div>
+                    </div>
+                </div>
+                <p class="text-xl font-bold text-black tracking-widest mt-2" id="pdfExportDate">列印日期：--</p>
+            </div>
+        </div>
+    </div>
+    <!-- ===== PDF 隱藏區塊結束 ===== -->
+
+
+    <!-- 3. 管理員面板 (匯入 + 刪除) -->
+    <div id="adminPanel" class="hidden fixed inset-0 bg-[#2C3539] bg-opacity-80 z-50 flex justify-center items-center backdrop-blur-sm">
+        <div class="wa-card w-full max-w-lg p-8 relative animate-fade-in-up max-h-[90vh] overflow-y-auto">
+            <button onclick="toggleAdmin(false)" class="absolute top-5 right-5 text-[#736F6E] hover:text-[#8B2626] transition"><i class="fa-solid fa-times text-2xl"></i></button>
+            <h2 class="text-2xl font-bold text-[#2C3539] mb-6 wa-title-border tracking-widest">管理員面板</h2>
+            
+            <div class="space-y-8">
+                <!-- 共用密碼區 -->
+                <div class="bg-[#F9F8F6] p-4 rounded border border-[#DCD3C6]">
+                    <label class="block text-sm font-bold text-[#5B6E5B] mb-2 tracking-widest">管理員密碼</label>
+                    <input type="password" id="adminPwd" class="w-full border border-[#DCD3C6] rounded p-3 focus:ring-1 focus:ring-[#5B6E5B] outline-none bg-white" placeholder="請輸入密碼 (預設: admin123)">
+                </div>
+
+                <!-- 匯入功能 -->
+                <div>
+                    <h3 class="text-lg font-bold text-[#2C3539] mb-3 tracking-widest border-b border-[#DCD3C6] pb-2"><i class="fa-solid fa-file-import text-[#5B6E5B] mr-2"></i>匯入成績 (CSV)</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-[#736F6E] mb-1">選擇檔案</label>
+                            <input type="file" id="csvFile" accept=".csv" class="w-full text-sm border border-[#DCD3C6] rounded cursor-pointer bg-[#F9F8F6]" onchange="previewFileName()">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-[#736F6E] mb-1">評量名稱</label>
+                            <input type="text" id="targetSheetName" class="w-full border border-[#DCD3C6] rounded p-3 text-sm outline-none focus:border-[#5B6E5B]" placeholder="例如: 114上第一次評量">
+                        </div>
+                        <button onclick="uploadCSV()" id="uploadBtn" class="w-full bg-[#5B6E5B] hover:bg-[#4A5A4A] text-white font-bold py-3 rounded transition text-sm tracking-widest">
+                            開始匯入
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 刪除功能 -->
+                <div>
+                    <h3 class="text-lg font-bold text-[#2C3539] mb-3 tracking-widest border-b border-[#DCD3C6] pb-2"><i class="fa-solid fa-trash-alt text-[#8B2626] mr-2"></i>刪除評量紀錄</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-[#736F6E] mb-1">選擇要刪除的評量</label>
+                            <select id="deleteSheetSelect" class="w-full border border-[#DCD3C6] rounded p-3 bg-white text-sm outline-none focus:border-[#8B2626]">
+                                <option value="" disabled selected>▼ 請選擇...</option>
+                            </select>
+                            <p class="text-xs text-[#8B2626] mt-2">* 刪除後無法復原，請謹慎操作</p>
+                        </div>
+                        <button onclick="deleteSheet()" id="deleteBtn" class="w-full bg-white border border-[#8B2626] text-[#8B2626] hover:bg-[#FDF8F8] font-bold py-3 rounded transition text-sm tracking-widest">
+                            刪除評量
+                        </button>
+                    </div>
+                </div>
+
+                <div id="adminStatus" class="text-center text-sm min-h-[24px]"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理員按鈕 -->
+    <button onclick="toggleAdmin(true)" class="fixed bottom-6 right-6 bg-[#FFFFFF] border-2 border-[#DCD3C6] text-[#736F6E] hover:text-[#5B6E5B] hover:border-[#5B6E5B] w-14 h-14 rounded-full shadow-lg transition z-40 flex items-center justify-center text-xl">
+        <i class="fa-solid fa-cog"></i>
+    </button>
+
+    <!-- Firebase SDK 模組載入 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const ADMIN_PWD = "admin123"; 
+        let db, auth, userAuth;
+        let examsCache = {}; 
+        let sheetList = [];
+        let currentUserId = "";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        function parseCSV(str) {
+            const arr = [];
+            let quote = false;
+            let col = -1, row = 0;
+            for (let c = 0; c < str.length; c++) {
+                let cc = str[c], nc = str[c+1];
+                arr[row] = arr[row] || [];
+                arr[row][col] = arr[row][col] || '';
+                if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; continue; }
+                if (cc == '"') { quote = !quote; continue; }
+                if (cc == ',' && !quote) { ++col; continue; }
+                if (cc == '\r' && nc == '\n' && !quote) { ++row; col = -1; ++c; continue; }
+                if (cc == '\n' && !quote) { ++row; col = -1; continue; }
+                if (cc == '\r' && !quote) { ++row; col = -1; continue; }
+                if (col < 0) col = 0;
+                arr[row][col] = (arr[row][col] || '') + cc;
+            }
+            return arr.filter(r => r && r.length > 0 && r.some(c => c.trim() !== ''));
+        }
+
+        function showMsg(type, text) {
+            const el = document.getElementById('systemMsg');
+            if(!text) return el.classList.add('hidden');
+            el.className = `w-full max-w-md mb-4 px-4 py-3 rounded text-center font-bold tracking-widest ${type==='error'?'bg-[#FDF8F8] text-[#8B2626] border border-[#8B2626]':'bg-[#F4F8F4] text-[#5B6E5B] border border-[#5B6E5B]'}`;
+            el.textContent = text; el.classList.remove('hidden');
+        }
+
+        async function loadExamsData() {
+            try {
+                const examsRef = collection(db, 'artifacts', appId, 'public', 'data', 'exams');
+                const snapshot = await getDocs(examsRef);
+                
+                examsCache = {};
+                sheetList = [];
+                
+                snapshot.forEach(doc => {
+                    examsCache[doc.id] = doc.data();
+                    sheetList.push(doc.id);
+                });
+
+                // 新增：依照名稱遞減排序 (讓 114 排在 113 前面，第二次排在第一次前面)
+                sheetList.sort((a, b) => b.localeCompare(a, 'zh-TW'));
+
+                const btn = document.getElementById('loginBtn');
+                btn.innerHTML = '登入系統';
+                btn.disabled = false;
+                btn.classList.remove('cursor-not-allowed', 'opacity-70');
+            } catch (err) {
+                console.error("讀取資料失敗:", err);
+                showMsg('error', '資料庫連線失敗，請重新整理頁面。');
+            }
+        }
+
+        async function initSystem() {
+            if (!Object.keys(firebaseConfig).length) {
+                showMsg('error', '尚未設定 Firebase 環境參數。');
+                return;
+            }
+
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userAuth = user;
+                        loadExamsData();
+                    }
+                });
+            } catch (err) {
+                console.error("登入失敗:", err);
+                showMsg('error', '系統驗證失敗。');
+            }
+        }
+        
+        window.handleLogin = function() {
+            const val = document.getElementById('loginIdInput').value.trim();
+            if (val.length !== 5) return showMsg("error", "請輸入完整的 5 碼");
+            
+            showMsg("", ""); 
+            let foundName = null;
+
+            for (let examName of sheetList) {
+                const exam = examsCache[examName];
+                if (!exam || !exam.rows) continue;
+                
+                for (let item of exam.rows) {
+                    const row = typeof item === 'string' ? JSON.parse(item) : item;
+                    for(let i=0; i<3; i++) {
+                        const str = String(row[i] || '').trim();
+                        if (str.length >= 5 && str.slice(-5) === val) {
+                            foundName = row[2]; 
+                            if (String(foundName).includes(val)) foundName = row[1]; 
+                            break;
+                        }
+                    }
+                    if (foundName) break;
+                }
+                if (foundName) break;
+            }
+
+            if (foundName) {
+                currentUserId = val;
+                document.getElementById('userDisplayName').textContent = foundName;
+                document.getElementById('loginPanel').classList.add('hidden');
+                document.getElementById('dashboardPanel').classList.remove('hidden');
+                renderSheetOptions();
+            } else {
+                showMsg("error", "系統中查無此學號資料。");
+            }
+        };
+
+        window.logout = function() {
+            currentUserId = "";
+            document.getElementById('dashboardPanel').classList.add('hidden');
+            document.getElementById('resultArea').classList.add('hidden');
+            document.getElementById('pdfExportContainer').classList.add('hidden'); 
+            
+            document.getElementById('loginPanel').classList.remove('hidden');
+            const mainHeader = document.getElementById('mainHeader');
+            if(mainHeader) mainHeader.classList.remove('hidden');
+            
+            document.getElementById('loginIdInput').value = "";
+            document.getElementById('userDisplayName').textContent = "同學";
+            document.getElementById('resName').textContent = "--";
+            document.getElementById('examSelect').innerHTML = '<option value="" disabled selected>▼ 請選擇評量成績...</option>';
+        };
+
+        window.handleExamChange = function() {
+            const sheetName = document.getElementById('examSelect').value;
+            if (!sheetName) return;
+            
+            document.getElementById('resultArea').classList.remove('hidden');
+            document.getElementById('resultContent').classList.add('hidden');
+            
+            const exam = examsCache[sheetName];
+            if (!exam) return alert("資料讀取異常");
+
+            const headers = exam.headers || [];
+            const rows = exam.rows ? exam.rows.map(item => typeof item === 'string' ? JSON.parse(item) : item) : [];
+
+            const map = { id: -1, seat: -1, name: -1, total: -1, note: -1 };
+            const subjects = {}; 
+            const subjectOrder = [];
+
+            headers.forEach((header, index) => {
+                const h = String(header).trim();
+                if (['身份證字號', '身分證字號', 'ID', 'Id'].includes(h)) map.id = index;
+                else if (['座號', 'Seat'].includes(h)) map.seat = index;
+                else if (['姓名', 'Name'].includes(h)) map.name = index;
+                else if (['總分', 'Total'].includes(h)) map.total = index;
+                else if (['備註', 'Note', '平均'].includes(h)) map.note = index;
+                else {
+                    let subName = ""; let type = "";
+                    if (h.endsWith("定期")) { subName = h.replace("定期", ""); type = "reg"; }
+                    else if (h.endsWith("平時")) { subName = h.replace("平時", ""); type = "daily"; }
+
+                    if (subName) {
+                        if (!subjects[subName]) {
+                            subjects[subName] = { name: subName, reg: -1, daily: -1 };
+                            subjectOrder.push(subName);
+                        }
+                        subjects[subName][type] = index;
+                    }
+                }
+            });
+
+            let targetRow = null;
+            for (let row of rows) {
+                const idStr = String(row[map.id] || '').trim();
+                if (idStr.length >= 5 && idStr.slice(-5) === currentUserId) {
+                    targetRow = row; break;
+                }
+            }
+
+            if (!targetRow) {
+                alert("在此次評量中查無您的成績紀錄。");
+                document.getElementById('resultContent').classList.add('hidden');
+                return;
+            }
+
+            const s = {
+                seat: (map.seat !== -1) ? targetRow[map.seat] : "",
+                name: (map.name !== -1) ? targetRow[map.name] : "",
+                total: (map.total !== -1) ? targetRow[map.total] : "",
+                note: (map.note !== -1) ? targetRow[map.note] : "",
+                subjects: []
+            };
+
+            subjectOrder.forEach(subName => {
+                const idxs = subjects[subName];
+                s.subjects.push({
+                    name: subName,
+                    reg: (idxs.reg !== -1) ? targetRow[idxs.reg] : "-",
+                    daily: (idxs.daily !== -1) ? targetRow[idxs.daily] : "-"
+                });
+            });
+
+            const stats = {};
+            subjectOrder.forEach(subName => {
+                const idxs = subjects[subName];
+                if (idxs.reg !== -1) {
+                    const scores = rows.map(r => parseFloat(r[idxs.reg])).filter(sc => !isNaN(sc));
+                    const sum = scores.reduce((a, b) => a + b, 0);
+                    const avg = scores.length ? (sum / scores.length).toFixed(1) : 0;
+                    const sorted = [...scores].sort((a, b) => b - a);
+                    const topN = Math.ceil(sorted.length / 2);
+                    const topSum = sorted.slice(0, topN).reduce((a, b) => a + b, 0);
+                    const highStd = topN ? (topSum / topN).toFixed(1) : 0;
+                    
+                    const dist = { '100': 0, '90-99': 0, '80-89': 0, '70-79': 0, '60-69': 0, 'under60': 0 };
+                    scores.forEach(sc => {
+                        if (sc === 100) dist['100']++;
+                        else if (sc >= 90) dist['90-99']++;
+                        else if (sc >= 80) dist['80-89']++;
+                        else if (sc >= 70) dist['70-79']++;
+                        else if (sc >= 60) dist['60-69']++;
+                        else dist['under60']++;
+                    });
+                    stats[subName] = { avg, highStd, distribution: dist, totalCount: scores.length };
+                }
+            });
+
+            renderResultUI(s, stats, subjectOrder.map(name => s.subjects.find(sub => sub.name === name)), sheetName);
+        };
+
+        function renderResultUI(s, stats, subjectList, sheetName) {
+            document.getElementById('resultContent').classList.remove('hidden');
+            const showDaily = s.subjects.some(sub => sub.daily !== '-' && sub.daily !== '');
+
+            document.getElementById('resSeat').textContent = s.seat;
+            document.getElementById('resName').textContent = s.name;
+            document.getElementById('resNote').textContent = s.note || '--';
+            document.getElementById('resTotal').textContent = s.total;
+
+            const thead = document.getElementById('scoreTableHead');
+            const tbody = document.getElementById('scoreTableBody');
+            
+            let headHtml = `<tr><th class="px-6 py-4 border-r border-[#DCD3C6]">科目</th><th class="px-6 py-4 text-center border-r border-[#DCD3C6]">定期評量</th>`;
+            if (showDaily) headHtml += `<th class="px-6 py-4 text-center">平時評量</th>`;
+            headHtml += `</tr>`;
+            thead.innerHTML = headHtml;
+
+            tbody.innerHTML = '';
+            const grid = document.getElementById('statsGrid');
+            grid.innerHTML = '';
+
+            s.subjects.forEach(sub => {
+                const name = sub.name;
+                const regScore = sub.reg;
+                const dailyScore = sub.daily;
+                const st = stats[name];
+
+                let rowHtml = `
+                    <tr class="hover:bg-[#F4F1EC] transition-colors">
+                        <td class="px-6 py-4 font-bold text-[#2C3539] border-r border-[#DCD3C6]">${name}</td>
+                        <td class="px-6 py-4 text-center font-bold text-[#5B6E5B] border-r border-[#DCD3C6]">${regScore}</td>`;
+                if (showDaily) rowHtml += `<td class="px-6 py-4 text-center text-[#736F6E]">${dailyScore}</td>`;
+                rowHtml += `</tr>`;
+                tbody.innerHTML += rowHtml;
+
+                if (st && st.totalCount > 0) {
+                    const total = st.totalCount;
+                    let bars = '';
+                    const ranges = [
+                        {k:'100',l:'100',c:'bg-[#8B2626]'},{k:'90-99',l:'90-99',c:'bg-[#5B6E5B]'},{k:'80-89',l:'80-89',c:'bg-[#738276]'},
+                        {k:'70-79',l:'70-79',c:'bg-[#A49F93]'},{k:'60-69',l:'60-69',c:'bg-[#C4B7A6]'},{k:'under60',l:'<60',c:'bg-[#DCD3C6]'}
+                    ];
+                    ranges.forEach(r => {
+                        const count = st.distribution[r.k] || 0;
+                        const pct = total ? (count/total)*100 : 0;
+                        bars += `
+                            <div class="flex items-center text-sm mb-2">
+                                <span class="w-12 text-right mr-3 text-[#736F6E]">${r.l}</span>
+                                <div class="flex-1 bg-[#F4F1EC] h-3 rounded-sm overflow-hidden border border-[#DCD3C6]"><div class="h-full ${r.c}" style="width:${pct}%"></div></div>
+                                <span class="w-8 text-right font-bold text-[#2C3539]">${count||''}</span>
+                            </div>`;
+                    });
+                    grid.innerHTML += `
+                        <div class="wa-card p-6">
+                            <div class="flex justify-between items-end border-b border-[#DCD3C6] pb-3 mb-4">
+                                <h5 class="font-bold text-[#2C3539] text-xl wa-title-border">${name}</h5><span class="text-xs bg-[#F4F1EC] text-[#5B6E5B] px-3 py-1 rounded font-bold border border-[#DCD3C6]">定期</span>
+                            </div>
+                            ${bars}
+                            <div class="flex justify-between mt-6 text-center text-sm bg-[#F9F8F6] border border-[#DCD3C6] p-3 rounded">
+                                <div><div class="text-[#736F6E] text-xs tracking-widest mb-1">班級平均</div><div class="font-black text-[#5B6E5B] text-xl">${st.avg}</div></div>
+                                <div><div class="text-[#736F6E] text-xs tracking-widest mb-1">前50%高標</div><div class="font-black text-[#8B2626] text-xl">${st.highStd}</div></div>
+                            </div>
+                        </div>`;
+                }
+            });
+
+            document.getElementById('pdfExportTitle').textContent = `${sheetName} 成績通知單`;
+            document.getElementById('pdfExportSeat').textContent = s.seat;
+            document.getElementById('pdfExportName').textContent = s.name;
+            document.getElementById('pdfExportNote').textContent = s.note || '--';
+            document.getElementById('pdfExportTotal').textContent = s.total;
+
+            const pdfThead = document.getElementById('pdfExportTableHead');
+            const pdfTbody = document.getElementById('pdfExportTableBody');
+
+            let pdfHeadHtml = `<tr><th class="border-2 border-[#2C3539] px-4 py-3 bg-[#F9F8F6] text-center tracking-widest">科目</th><th class="border-2 border-[#2C3539] px-4 py-3 bg-[#F9F8F6] text-center tracking-widest">定期評量</th>`;
+            if (showDaily) pdfHeadHtml += `<th class="border-2 border-[#2C3539] px-4 py-3 bg-[#F9F8F6] text-center tracking-widest">平時評量</th>`;
+            pdfHeadHtml += `</tr>`;
+            pdfThead.innerHTML = pdfHeadHtml;
+
+            let pdfBodyHtml = '';
+            s.subjects.forEach(sub => {
+                pdfBodyHtml += `<tr>
+                    <td class="border-2 border-[#2C3539] px-4 py-3 font-bold bg-white text-center tracking-wider">${sub.name}</td>
+                    <td class="border-2 border-[#2C3539] px-4 py-3 bg-white text-center font-bold">${sub.reg}</td>`;
+                if (showDaily) pdfBodyHtml += `<td class="border-2 border-[#2C3539] px-4 py-3 bg-white text-center font-bold">${sub.daily}</td>`;
+                pdfBodyHtml += `</tr>`;
+            });
+            pdfTbody.innerHTML = pdfBodyHtml;
+        }
+
+        function renderSheetOptions() {
+            const sel = document.getElementById('examSelect');
+            sel.innerHTML = '<option value="" disabled selected>▼ 請選擇評量成績...</option>';
+            sheetList.forEach(n => sel.innerHTML += `<option value="${n}">${n}</option>`);
+        }
+
+        // ==========================================
+        // 修改：讓 PDF 截圖前延遲，確保圖片有足夠時間載入
+        // ==========================================
+        window.downloadPDF = async function() {
+            const btn = document.getElementById('pdfBtn');
+            btn.innerHTML = '<div class="loader mr-2 border-t-white"></div> 產生中...';
+            btn.disabled = true;
+
+            const pdfContainer = document.getElementById('pdfExportContainer');
+            const dashboardPanel = document.getElementById('dashboardPanel');
+            const mainHeader = document.getElementById('mainHeader');
+            
+            if (mainHeader) mainHeader.classList.add('hidden');
+            dashboardPanel.classList.add('hidden');
+            pdfContainer.classList.remove('hidden');
+
+            const studentName = document.getElementById('resName').textContent;
+            const sheetName = document.getElementById('examSelect').value;
+
+            const today = new Date();
+            const dateStr = `${today.getFullYear()}年${String(today.getMonth() + 1).padStart(2, '0')}月${String(today.getDate()).padStart(2, '0')}日`;
+            document.getElementById('pdfExportDate').textContent = `列印日期：${dateStr}`;
+
+            // 給瀏覽器 0.5 秒的時間來渲染剛剛顯示出來的印章圖片
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            const opt = {
+                margin:       0, 
+                filename:     `${studentName}_${sheetName}成績通知單.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 }, 
+                jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' } 
+            };
+
+            html2pdf().set(opt).from(pdfContainer).save().then(() => {
+                pdfContainer.classList.add('hidden');
+                dashboardPanel.classList.remove('hidden');
+                if (mainHeader) mainHeader.classList.remove('hidden');
+                
+                btn.innerHTML = '<i class="fa-solid fa-print mr-2 text-lg"></i>印製成績單 (PDF)';
+                btn.disabled = false;
+            }).catch(err => {
+                console.error('PDF error:', err);
+                pdfContainer.classList.add('hidden');
+                dashboardPanel.classList.remove('hidden');
+                if (mainHeader) mainHeader.classList.remove('hidden');
+                
+                btn.innerHTML = '<i class="fa-solid fa-print mr-2 text-lg"></i>印製成績單 (PDF)';
+                btn.disabled = false;
+                alert('匯出 PDF 時發生錯誤！');
+            });
+        };
+
+        window.toggleAdmin = function(show) {
+            const panel = document.getElementById('adminPanel');
+            if (show) {
+                panel.classList.remove('hidden');
+                const delSel = document.getElementById('deleteSheetSelect');
+                delSel.innerHTML = '<option value="" disabled selected>▼ 請選擇要刪除的評量...</option>';
+                sheetList.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n; opt.textContent = n;
+                    delSel.appendChild(opt);
+                });
+            } else {
+                panel.classList.add('hidden');
+                document.getElementById('adminStatus').innerHTML = '';
+            }
+        };
+
+        window.previewFileName = function() {
+            const fileInput = document.getElementById('csvFile');
+            const nameInput = document.getElementById('targetSheetName');
+            if (fileInput.files.length > 0) {
+                let name = fileInput.files[0].name.replace('.csv', '');
+                if (name.includes('-')) name = name.split('-').pop().trim();
+                nameInput.value = name;
+            }
+        };
+
+        window.uploadCSV = async function() {
+            if(!userAuth) return alert("尚未連線資料庫或權限不足");
+            const pwd = document.getElementById('adminPwd').value;
+            const fileInput = document.getElementById('csvFile');
+            const sheetName = document.getElementById('targetSheetName').value;
+            const status = document.getElementById('adminStatus');
+
+            if (pwd !== ADMIN_PWD) {
+                status.innerHTML = `<span class="text-[#8B2626] font-bold">密碼錯誤</span>`;
+                return;
+            }
+            if (fileInput.files.length === 0 || !sheetName) return alert("請填寫匯入資訊");
+
+            status.innerHTML = `<span class="text-[#5B6E5B] font-bold">處理中...</span>`;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const text = e.target.result;
+                    const parsed = parseCSV(text);
+                    if(parsed.length < 2) throw new Error("CSV格式錯誤或無資料");
+
+                    const headers = parsed[0];
+                    const rows = parsed.slice(1).map(row => JSON.stringify(row));
+                    
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'exams', sheetName);
+                    await setDoc(docRef, { headers, rows, createdAt: new Date().getTime() });
+                    
+                    status.innerHTML = `<span class="text-[#5B6E5B] font-bold">匯入成功！重新讀取中...</span>`;
+                    await loadExamsData(); 
+                    document.getElementById('adminPwd').value = '';
+                    window.toggleAdmin(false);
+                    alert("匯入成功！");
+                } catch(err) {
+                    console.error(err);
+                    status.innerHTML = `<span class="text-[#8B2626] font-bold">處理失敗: ${err.message}</span>`;
+                }
+            };
+            reader.readAsText(fileInput.files[0], 'UTF-8'); 
+        };
+
+        window.deleteSheet = async function() {
+            if(!userAuth) return alert("尚未連線資料庫");
+            const pwd = document.getElementById('adminPwd').value;
+            const sheetName = document.getElementById('deleteSheetSelect').value;
+            const status = document.getElementById('adminStatus');
+
+            if (pwd !== ADMIN_PWD) {
+                status.innerHTML = `<span class="text-[#8B2626] font-bold">密碼錯誤</span>`;
+                return;
+            }
+            if (!sheetName) return alert("請選擇要刪除的評量");
+            if (!confirm(`確定要永久刪除「${sheetName}」嗎？`)) return;
+
+            status.innerHTML = `<span class="text-[#8B2626] font-bold">刪除中...</span>`;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'exams', sheetName);
+                await deleteDoc(docRef);
+                
+                status.innerHTML = `<span class="text-[#5B6E5B] font-bold">刪除成功！重新讀取中...</span>`;
+                await loadExamsData();
+                document.getElementById('adminPwd').value = '';
+                window.toggleAdmin(false);
+                alert("刪除成功！");
+            } catch(err) {
+                status.innerHTML = `<span class="text-[#8B2626] font-bold">刪除失敗: ${err.message}</span>`;
+            }
+        };
+
+        initSystem();
+    </script>
+</body>
+</html>
